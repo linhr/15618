@@ -16,11 +16,11 @@ Eigendecomposition is a basic routine in many linear algebra libraries. It is al
 *   \\(L\mathbf{f} = \lambda \mathbf{f}\\)
 *   \\(L\mathbf{f} = \lambda D\mathbf{f}\\), or \\(D^{-1}L\mathbf{f} = \lambda\mathbf{f}\\)
 
-Therefore, the key is to solve the eigendecomposition problem \\[M\mathbf{f} = \lambda \mathbf{f}\\] for some matrices \\(M\\). As this project focus on the area of graph analysis, we restrict ourselves to the case when \\(M\\) is symmetric.
+Therefore, the key is to solve the eigendecomposition problem \\[M\mathbf{f} = \lambda \mathbf{f}\\] for some matrix \\(M\\). As this project focuses on the area of graph analysis, we restrict ourselves to the case when \\(M\\) is symmetric.
 
 The spectral graph theory has many applications. The first few components of the eigenvector can be viewed as a low dimensional representation of vertices in the graph. This dimension reduction procedure followed by a k-means clustering forms the basis for spectral clustering [2]. Also spectral analysis can be used for image segmentation, if we convert an image to a similarity graph where each vertex corresponds to a pixel in the image and edge weights measure the similarity of adjacent pixels [3].
 
-The Lanczos algorithm [1] is one of the classic algorithms for eigendecomposition. It is an iterative update to the eigenvector and eigenvalues. Each step involves matrix-vector multiplications, which can be parallelized on GPU. Also, it would be interesting if we can visualize the low dimensional representation produced from eigendecomposition, and rendering such a visualization can naturally be done in parallel on GPU.
+The Lanczos algorithm [1] is one of the classic algorithms for eigendecomposition. It is an iterative update to the eigenvector and eigenvalue. Each step involves matrix-vector multiplications, which can be parallelized on GPU. Also, it would be interesting if we can visualize the low dimensional representation produced from eigendecomposition, and rendering such a visualization can naturally be done in parallel on GPU.
 
 ## CHALLENGES
 
@@ -28,7 +28,7 @@ The graphs we are interested in are generally sparse, so a basic challenge for o
 
 ## RESOURCES
 
-* We refer to some existing work on parallel Lanczos algorithm [5, 6] as our starting point. As these papers do not provide much details on the sparse matrix operations, we need to come up with our own solution to fit into the general framework.
+* We refer to some existing work on the parallel Lanczos algorithm [5, 6] as our starting point. As these papers do not provide much details on the sparse matrix operations, we need to come up with our own solution to fit into the general framework.
 * We plan to use GPUs on GHC machines for our experiments.
 * We may use the [cuBLAS](https://developer.nvidia.com/cuBLAS) library for some basic linear algebra operations.
 
@@ -36,7 +36,7 @@ The graphs we are interested in are generally sparse, so a basic challenge for o
 
 We plan to achieve an efficient GPU-based Lanczos algorithm implementation for eigendecomposition that can deal with large sparse matrices. We hope that our solution can be at least 5x faster on large graphs (matrices) than CPU-based solutions (such as the one provided in MATLAB) on GHC machines, because from most papers we have read we see a speedup of at least 5x compared with the MATLAB implementation.
 
-We plan to conduct thorough experiments on the performance for different kinds of graphs (generated graphs, social networks, similarity graph created from some datasets), and show the speedup graphs comparing our solution with other CPU-based solutions and GPU-based solutions. We hope that our performance will be comparable to the one in the CUDA Toolkit [cuSOLVER](https://developer.nvidia.com/cusolver), which means that we have done a really good job.
+We plan to conduct thorough experiments on the performance for different kinds of graphs (generated graphs, social networks, similarity graph created from some datasets, etc.), and show the speedup graphs comparing our solution with other CPU-based solutions and GPU-based solutions. We hope that our performance will be comparable to the one in the CUDA Toolkit [cuSOLVER](https://developer.nvidia.com/cusolver), which means that we have done a really good job.
 
 We also plan to use CUDA to visualize the eigenvectors we have computed. If we have time we may try to implement parallel spectral clustering or image segmentation based on our eigensolver.
 
@@ -60,7 +60,7 @@ Apply our solution to some real-world problems such as graph visualization or im
 
 ### May 1st - May 7th
 
-Finalize our report. Also keep some buffer time in case some of our previous tasks takes too long.
+Finalize our report. Also keep some buffer time in case some of our previous tasks take too long.
 
 ### May 8th - May 11th
 
@@ -80,6 +80,6 @@ We choose to use the GPU on GHC machines, because that is enough for interesting
 
 [4] Belkin, M., & Niyogi, P. (2003). Laplacian eigenmaps for dimensionality reduction and data representation. Neural computation, 15(6), 1373-1396.
 
-[5] Matam, K. K., & Kothapalli, K. (2011, March). GPU accelerated Lanczos algorithm with applications. In Advanced Information Networking and Applications (WAINA), 2011 IEEE Workshops of International Conference on (pp. 71-76). IEEE.
+[5] Matam, K. K., & Kothapalli, K. (2011). GPU accelerated Lanczos algorithm with applications. In Advanced Information Networking and Applications (WAINA), 2011 IEEE Workshops of International Conference on (pp. 71-76). IEEE.
 
 [6] Wu, K., & Simon, H. (1999). A parallel Lanczos method for symmetric generalized eigenvalue problems. Computing and Visualization in Science, 2(1), 37-46.
