@@ -18,7 +18,7 @@ Eigendecomposition is a basic routine in many linear algebra libraries. It is al
 
 Therefore, the key is to solve the eigendecomposition problem \\[M\mathbf{f} = \lambda \mathbf{f}\\] for some matrix \\(M\\). As this project focuses on the area of graph analysis, we restrict ourselves to the case when \\(M\\) is symmetric.
 
-The spectral graph theory has many applications. The first few components of the eigenvector can be viewed as a low dimensional representation of vertices in the graph. This dimension reduction procedure followed by a k-means clustering forms the basis for spectral clustering [2]. Also spectral analysis can be used for image segmentation, if we convert an image to a similarity graph where each vertex corresponds to a pixel in the image and edge weights measure the similarity of adjacent pixels [3].
+The spectral graph theory has many applications. The first few components of the eigenvector can be viewed as a low dimensional representation of vertices in the graph [4]. This dimension reduction procedure followed by a k-means clustering forms the basis for spectral clustering [2]. Also spectral analysis can be used for image segmentation, if we convert an image to a similarity graph where each vertex corresponds to a pixel in the image and edge weights measure the similarity of adjacent pixels [3].
 
 The Lanczos algorithm [1] is one of the classic algorithms for eigendecomposition. It is an iterative update to the eigenvector and eigenvalue. Each step involves matrix-vector multiplications, which can be parallelized on GPU. Also, it would be interesting if we can visualize the low dimensional representation produced from eigendecomposition, and rendering such a visualization can naturally be done in parallel on GPU.
 
