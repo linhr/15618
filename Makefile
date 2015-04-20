@@ -10,8 +10,8 @@ NVCCFLAGS = -m64 -O3 -arch compute_20
 
 LDFLAGS = -L/usr/local/cuda/lib64/ -lcudart
 
-INCLUDES = $(addprefix $(SOURCE_DIR)/, matrix.h graph_io.h linear_algebra.h cycle_timer.h)
-OBJECTS = $(addprefix $(BUILD_DIR)/, main.o)
+INCLUDES = $(addprefix $(SOURCE_DIR)/, matrix.h graph_io.h linear_algebra.h cuda_algebra.h cycle_timer.h)
+OBJECTS = $(addprefix $(BUILD_DIR)/, main.o cuda_algebra.o)
 
 .PHONY: all clean
 
@@ -27,6 +27,9 @@ $(EXECUTABLE): $(OBJECTS)
 
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.cc
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.cu
+	$(NVCC) $(NVCCFLAGS) -c -o $@ $<
 
 clean:
 	rm -rf $(BUILD_DIR) $(EXECUTABLE)
