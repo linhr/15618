@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cmath>
 
 #include "matrix.h"
 #include "cuda_algebra.h"
@@ -305,6 +306,45 @@ void cuda_saxpy_inplace(vector<T> &y, const T &a, const vector<T> &x) {
 }
 
 /**
+ * @brief   Caller function for vector l2 norm in CUDA.
+ *
+ * @param   v  The vector.
+ *
+ * @return  The l2 norm of the vector v.
+ */
+template <typename T>
+T cuda_l2_norm(const vector<T> &v) {
+    int n = v.size();
+    const int blocks = (n + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+
+    // Malloc device space
+    T *x, *z;
+    cudaMalloc(&x, sizeof(T) * n);
+    cudaMalloc(&z, sizeof(T) * blocks);
+
+    // Transfer data from host to device
+    cudaMemcpy(x, v.data(), sizeof(T) * n, cudaMemcpyHostToDevice);
+
+    // Run kernel
+    dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(n, x, x, z);
+    cudaThreadSynchronize();
+
+    // Transfer result back from device to host
+    T z_host[blocks];
+    T result(0);
+    cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
+    for (int i = 0; i < blocks; i++) {
+        result += z_host[i];
+    }
+
+    // Release device space
+    cudaFree(x);
+    cudaFree(z);
+
+    return T(sqrt(result));
+}
+
+/**
  * @brief   Caller function for naive sparse matrix multiplication in CUDA.
  *
  * @param   m   The matrix to multiply.
@@ -425,6 +465,7 @@ template __global__ void saxpy_inplace_kernel<float>(const int, float *,
     const float *, const float);
 template void cuda_saxpy_inplace<float>(vector<float> &y, const float &a,
     const vector<float> &x);
+template float cuda_l2_norm(const vector<float> &v);
 
 template __global__ void naive_multiply_kernel(const int, const int *,
     const int *, const float *, const float *, float *);

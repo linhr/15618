@@ -74,6 +74,10 @@ void test() {
     float gpu_result = cuda_dot_product<float>(x, y);
     printf("Dot_product - cpu: %f, gpu: %f\n", cpu_result, gpu_result);
 
+    cpu_result = l2_norm<float>(x);
+    gpu_result = cuda_l2_norm<float>(x);
+    printf("L2_norm - cpu: %f, gpu: %f\n", cpu_result, gpu_result);
+
     for (int i = 0; i < n; i++) {
         x[i] = random() * 10 / RAND_MAX;
         y[i] = x[i];
