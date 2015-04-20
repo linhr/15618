@@ -6,7 +6,7 @@ CXX = g++
 CXXFLAGS = -m64 -O3 -Wall -std=c++11
 
 NVCC = nvcc
-NVCCFLAGS = -m64 -O3 -arch compute_20
+NVCCFLAGS = -m64 -O3 -arch compute_20 -std=c++11
 
 LDFLAGS = -L/usr/local/cuda/lib64/ -lcudart
 
