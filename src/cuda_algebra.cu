@@ -12,6 +12,23 @@
 using std::vector;
 
 /**
+ * @brief   Cuda kernel function for vector copy.
+ *
+ * @param   N   The vector size.
+ * @param   y   The dest vector.
+ * @param   x   The src vector.
+ */
+template <typename T>
+__global__ void vector_copy_kernel(const int N, T *y, const T *x) {
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < N) {
+        y[index] = x[index];
+    }
+}
+
+/**
  * @brief   Cuda kernel function for vector dot product.
  *
  * @param   N   The vector size.
@@ -78,6 +95,23 @@ __global__ void add_inplace_kernel(const int N, T *x, const T k) {
 
     if (index < N) {
         x[index] = x[index] + k;
+    }
+}
+
+/**
+ * @brief   Cuda kernel function for vector-vector add in place.
+ *
+ * @param   N   The vector size.
+ * @param   x   The input vector.
+ * @param   y   The other vector to add.
+ */
+template <typename T>
+__global__ void vec_add_inplace_kernel(const int N, T *x, const T *y) {
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < N) {
+        x[index] = x[index] + y[index];
     }
 }
 
@@ -447,6 +481,116 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     cudaFree(values);
     cudaFree(x);
     cudaFree(y);
+
+    return result;
+}
+
+/**
+ * @brief   Caller function for naive Lanczos algorithm in CUDA.
+ *
+ * @param   m   The matrix to do operations on.
+ * @param   v   The initial vector with norm 1.
+ * @param   k   The iteration times for lanczos algorithm.
+ *
+ * @return  The tridiagonal matrix result of lanczos algorithm.
+ */
+template <typename T>
+symm_tridiag_matrix<T> cuda_naive_lanczos(const csr_matrix<T> &m,
+    const vector<T> &v, const int k) {
+    // TODO: This function is untested
+    symm_tridiag_matrix<T> result(k);
+
+    int rows = m.row_size();
+    int cols = m.col_size();
+    int nonzeros = m.nonzeros();
+    const int blocks = (rows+THREADS_PER_BLOCK-1) / THREADS_PER_BLOCK;
+    assert(rows == cols);
+    assert(cols == v.size());
+
+    // Malloc device space
+    int *row_ptr, *col_ind;
+    T *values, *x, *x_prev, *x_tmp, *y, *z;
+    cudaMalloc(&row_ptr, sizeof(int) * (rows + 1));
+    cudaMalloc(&col_ind, sizeof(int) * nonzeros);
+    cudaMalloc(&values, sizeof(T) * nonzeros);
+    cudaMalloc(&x, sizeof(T) * cols);
+    cudaMalloc(&x_prev, sizeof(T) * cols);
+    cudaMalloc(&y, sizeof(T) * cols);
+    cudaMalloc(&z, sizeof(T) * blocks);
+
+    // Host space
+    T z_host[blocks];
+    T sum(0);
+
+    // Transfer data from host to device
+    cudaMemcpy(row_ptr, m.row_ptr_data(), sizeof(int) * (rows + 1),
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(col_ind, m.col_ind_data(), sizeof(int) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(values, m.values_data(), sizeof(T) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
+
+    // Run kernel
+    for (int i = 0; i < k; i++) {
+        // y_i = M*x_i
+        naive_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+            row_ptr, col_ind, values, x, y);
+        cudaThreadSynchronize();
+        // alpha_i <- y_i*x_i
+        dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,x,y,z);
+        cudaThreadSynchronize();
+        cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
+        sum = 0;
+        for (int j = 0; j < blocks; j++) {
+            sum += z_host[i];
+        }
+        result.alpha(i) = sum;
+        // y_i <- y_i - alpha_i*x_i - beta_i*x_(i-1)
+        if (i == 0) {
+            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+                y, x, -sum);
+            cudaThreadSynchronize();
+            x_tmp = x;
+            x = x_prev;
+            x_prev = x_tmp;
+        } else {
+            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+                y, x, -sum);
+            cudaThreadSynchronize();
+            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+                y, x_prev, -result.beta(i-1));
+            cudaThreadSynchronize();
+            x_tmp = x;
+            x = x_prev;
+            x_prev = x_tmp;
+        }
+        // beta_(i+1) <- ||y_i||
+        dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,y,y,z);
+        cudaThreadSynchronize();
+        cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
+        sum = 0;
+        for (int j = 0; j < blocks; j++) {
+            sum += z_host[i];
+        }
+        result.beta(i) = T(sqrt(sum));
+        // x_(i+1) <- y_i / beta_(i+1)
+        multiply_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, y,
+            1/result.beta(i));
+        cudaThreadSynchronize();
+        x_tmp = x;
+        x = y;
+        y = x_tmp;
+    }
+
+    // Release device space
+    cudaFree(row_ptr);
+    cudaFree(col_ind);
+    cudaFree(values);
+    cudaFree(x);
+    cudaFree(x_prev);
+    cudaFree(y);
+    cudaFree(z);
 
     return result;
 }
