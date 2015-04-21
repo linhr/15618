@@ -797,7 +797,7 @@ section #title h1 {
   font-weight: normal;
   font-size: 40px;
   text-align: center;
-  line-height: 36px;
+  line-height: 54px;
 }
 section #title p {
   color: #d7cfbe;
@@ -806,32 +806,35 @@ section #title p {
   font-size: 18px;
   text-align: center;
 }
-section #title .credits {
+section .content h1 {
+  margin-bottom: 40px;
+}
+#footer .credits {
   font-size: 11px;
   font-family: 'OpenSansRegular', "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: normal;
   color: #696969;
   margin-top: -10px;
 }
-section #title .credits.left {
+#footer .credits.left {
   float: left;
 }
-section #title .credits.right {
+#footer .credits.right {
   float: right;
 }
 
 @media print, screen and (max-width: 720px) {
-  #title .credits {
+  #footer .credits {
     display: block;
     width: 100%;
     line-height: 30px;
     text-align: center;
   }
-  #title .credits .left {
+  #footer .credits .left {
     float: none;
     display: block;
   }
-  #title .credits .right {
+  #footer .credits .right {
     float: none;
     display: block;
   }
