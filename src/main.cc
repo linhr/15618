@@ -6,6 +6,7 @@
 #include "matrix.h"
 #include "linear_algebra.h"
 #include "cuda_algebra.h"
+#include "cycle_timer.h"
 
 using std::cout;
 using std::cerr;
@@ -54,9 +55,9 @@ static void parse_option(int argc, char *argv[]) {
     }
 }
 
-void test() {
+void test(const csr_matrix<float> &matrix) {
     // Due to different order of adding floats, Cuda results may slightly differ from cpu results
-    int n = 8192;
+    int n = 400000;
 
     vector<float> x(n, 0);
     vector<float> y(n, 0);
@@ -121,22 +122,25 @@ void test() {
     }
     printf("Saxpy inplace checked\n");
 
-    float w(1);
+    /*float w(1);
     coo_matrix<float> graph(n);
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            int p = random() % 100;
-            if (p < 2) {
-                graph.add_entry(i, j, w);
-            }
+            graph.add_entry(i, j, w);
         }
     }
-    csr_matrix<float> matrix(graph);
+    csr_matrix<float> matrix(graph);*/
     for (int i = 0; i < n; i++) {
         z[i] = random() * 10 / RAND_MAX;
     }
+    double start_time = cycle_timer::current_seconds();
     vector<float> a = multiply(matrix, z);
+    double end_time = cycle_timer::current_seconds();
+    printf("cpu multiply: %f\n", end_time - start_time);
+    start_time = cycle_timer::current_seconds();
     vector<float> b = cuda_naive_multiply(matrix, z);
+    end_time = cycle_timer::current_seconds();
+    printf("naive gpu multiply: %f\n", end_time - start_time);
     for (int i = 0; i < n; i++) {
         if (a[i] != b[i]) {
             printf("Naive mv multiply disagree\n");
@@ -144,7 +148,10 @@ void test() {
         }
     }
     printf("Naive mv multiply checked\n");
+    start_time = cycle_timer::current_seconds();
     vector<float> c = cuda_warp_multiply(matrix, z);
+    end_time = cycle_timer::current_seconds();
+    printf("warp gpu multiply: %f\n", end_time - start_time);
     for (int i = 0; i < n; i++) {
         if (a[i] != c[i]) {
             printf("Warp mv multiply disagree\n");
@@ -160,7 +167,7 @@ int main(int argc, char *argv[]) {
     coo_matrix<float> graph = adjacency_matrix_from_graph<float>(node_count, graph_file);
     csr_matrix<float> matrix(graph);
 
-    test();
+    test(matrix);
 
     return 0;
 }

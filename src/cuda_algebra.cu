@@ -5,6 +5,7 @@
 
 #include "matrix.h"
 #include "cuda_algebra.h"
+#include "cycle_timer.h"
 
 #define WARP_SIZE 32
 #define THREADS_PER_BLOCK 512
@@ -413,9 +414,12 @@ vector<T> cuda_naive_multiply(const csr_matrix<T> &m, const vector<T> &v) {
 
     // Run kernel
     const int blocks = (rows + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    double start_time = cycle_timer::current_seconds();
     naive_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, row_ptr,
         col_ind, values, x, y);
     cudaThreadSynchronize();
+    double end_time = cycle_timer::current_seconds();
+    printf("gpu naive multiply kernel: %f\n", end_time - start_time);
 
     // Transfer result back from device to host
     vector<T> result(cols);
@@ -467,9 +471,12 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     // Run kernel
     const int warps_per_block = THREADS_PER_BLOCK / WARP_SIZE;
     const int blocks = (rows + warps_per_block - 1) / warps_per_block;
+    double start_time = cycle_timer::current_seconds();
     warp_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, row_ptr,
         col_ind, values, x, y);
     cudaThreadSynchronize();
+    double end_time = cycle_timer::current_seconds();
+    printf("gpu warp multiply kernel: %f\n", end_time - start_time);
 
     // Transfer result back from device to host
     vector<T> result(cols);
