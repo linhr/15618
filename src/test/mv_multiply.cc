@@ -41,9 +41,9 @@ static void test(const string &filename, int n) {
     cout << "CPU-GPU difference: " << diff_vector(a, c) << endl << endl;
 
     start_time = cycle_timer::current_seconds();
-    vector<T> d = cuda_new_multiply(matrix, x);
+    vector<T> d = cuda_cusparse_multiply(matrix, x);
     end_time = cycle_timer::current_seconds();
-    cout << "GPU new multiply: " << end_time - start_time << " sec" << endl;
+    cout << "GPU cusparse multiply: " << end_time - start_time << " sec" << endl;
     cout << "CPU-GPU difference: " << diff_vector(a, d) << endl << endl;
 }
 
