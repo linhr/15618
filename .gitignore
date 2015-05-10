@@ -10,3 +10,5 @@ eigensolver
 
 data/*
 !data/*.py
+
+test_*

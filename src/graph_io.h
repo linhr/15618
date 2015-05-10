@@ -30,4 +30,19 @@ coo_matrix<T> adjacency_matrix_from_graph(int node_count, const string &edge_fil
     return matrix;
 }
 
+template <typename T>
+symm_tridiag_matrix<T> symm_tridiag_matrix_from_file(const string &path) {
+    int n;
+    ifstream input(path);
+    input >> n;
+    symm_tridiag_matrix<T> matrix(n);
+    for (int i = 0; i < n; ++i) {
+        input >> matrix.alpha(i);
+    }
+    for (int i = 0; i < n - 1; ++i) {
+        input >> matrix.beta(i);
+    }
+    return matrix;
+}
+
 #endif

@@ -1,6 +1,7 @@
 #ifndef _MATRIX_H_
 #define _MATRIX_H_
 
+#include <cassert>
 #include <vector>
 
 using std::vector;
@@ -119,6 +120,8 @@ public:
 
     int size() const { return alpha_.size(); }
     void resize(int n);
+    void remove_forward(int i);
+    void remove_backward(int i);
 
     const T &alpha(int i) const { return alpha_[i]; }
     const T &beta(int i) const { return beta_[i]; }
@@ -133,8 +136,6 @@ public:
     T *beta_data() { return beta_.data(); }
 
 private:
-    int size_;
-
     vector<T> alpha_; /**< main diagonal entries */
     vector<T> beta_; /**< diagonal entries below or above the main diagonal */
 };
@@ -143,6 +144,20 @@ template <typename T>
 void symm_tridiag_matrix<T>::resize(int n) {
     alpha_.resize(n);
     beta_.resize(n - 1);
+}
+
+template <typename T>
+void symm_tridiag_matrix<T>::remove_forward(int i) {
+    assert(i < size() - 1);
+    alpha_.erase(alpha_.begin() + i);
+    beta_.erase(beta_.begin() + i);
+}
+
+template <typename T>
+void symm_tridiag_matrix<T>::remove_backward(int i) {
+    assert(i > 0);
+    alpha_.erase(alpha_.begin() + i);
+    beta_.erase(beta_.begin() - 1 + i);
 }
 
 #endif
