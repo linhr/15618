@@ -613,6 +613,31 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     return result;
 }
 
+template <typename T>
+cusparseStatus_t cusparse_mv_multiply_wrapper(cusparseHandle_t handle,
+    cusparseOperation_t transA, int m, int n, int nnz, const cusparseMatDescr_t descrA,
+    const T *csrValA, const int *csrRowPtrA, const int *csrColIndA, const T *x, T *y);
+
+template <>
+cusparseStatus_t cusparse_mv_multiply_wrapper<float>(cusparseHandle_t handle,
+    cusparseOperation_t transA, int m, int n, int nnz, const cusparseMatDescr_t descrA,
+    const float *csrValA, const int *csrRowPtrA, const int *csrColIndA, const float *x, float *y) {
+    float one = 1;
+    float zero = 0;
+    return cusparseScsrmv(handle, transA, m, n, nnz, &one, descrA,
+        csrValA, csrRowPtrA, csrColIndA, x, &zero, y);
+}
+
+template <>
+cusparseStatus_t cusparse_mv_multiply_wrapper<double>(cusparseHandle_t handle,
+    cusparseOperation_t transA, int m, int n, int nnz, const cusparseMatDescr_t descrA,
+    const double *csrValA, const int *csrRowPtrA, const int *csrColIndA, const double *x, double *y) {
+    double one = 1;
+    double zero = 0;
+    return cusparseDcsrmv(handle, transA, m, n, nnz, &one, descrA,
+        csrValA, csrRowPtrA, csrColIndA, x, &zero, y);
+}
+
 /**
  * @brief   Caller function for cusparse matrix multiplication in CUDA.
  *
@@ -626,7 +651,6 @@ vector<T> cuda_cusparse_multiply(const csr_matrix<T> &m,
     const vector<T> &v) {
     cusparseHandle_t handle=0;
     cusparseMatDescr_t descr=0;
-    float fone = 1;
 
     int rows = m.row_size();
     int cols = m.col_size();
@@ -660,8 +684,8 @@ vector<T> cuda_cusparse_multiply(const csr_matrix<T> &m,
     cusparseSetMatType(descr,CUSPARSE_MATRIX_TYPE_GENERAL);
     cusparseSetMatIndexBase(descr,CUSPARSE_INDEX_BASE_ZERO);
     start_time= cycle_timer::current_seconds();
-    cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, rows, cols,
-        nonzeros, &fone, descr, values, row_ptr, col_ind, x, &fone, y);
+    cusparse_mv_multiply_wrapper<T>(handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        rows, cols, nonzeros, descr, values, row_ptr, col_ind, x, y);
     cudaThreadSynchronize();
     end_time= cycle_timer::current_seconds();
     printf("gpu cusparse multiply kernel: %f\n", end_time - start_time);
@@ -902,35 +926,25 @@ vector<T> cuda_lanczos_eigen(const csr_matrix<T> &matrix, int k, int steps) {
     return lanczos_no_spurious(tridiag, k);
 }
 
-template __global__ void dot_product_kernel<float>(const int,
-    const float *, const float *, float *);
-template float cuda_dot_product<float>(const vector<float> &v1,
-    const vector<float> &v2);
-template __global__ void multiply_inplace_kernel<float>(const int, float *,
-    const float);
-template void cuda_multiply_inplace<float>(vector<float> &v, const float &k);
-template __global__ void add_inplace_kernel<float>(const int, float *,
-    const float);
-template void cuda_add_inplace<float>(vector<float> &v, const float &k);
-template __global__ void saxpy_inplace_kernel<float>(const int, float *,
-    const float *, const float);
-template void cuda_saxpy_inplace<float>(vector<float> &y, const float &a,
-    const vector<float> &x);
+template void cuda_multiply_inplace(vector<float> &v, const float &k);
+template void cuda_add_inplace(vector<float> &v, const float &k);
+template void cuda_saxpy_inplace(vector<float> &y, const float &a, const vector<float> &x);
+template float cuda_dot_product(const vector<float> &v1, const vector<float> &v2);
 template float cuda_l2_norm(const vector<float> &v);
 
-template vector<float> cuda_lanczos_eigen(const csr_matrix<float> &matrix,
-    int k, int steps);
-template vector<double> cuda_lanczos_eigen(const csr_matrix<double> &matrix,
-    int k, int steps);
+template void cuda_multiply_inplace(vector<double> &v, const double &k);
+template void cuda_add_inplace(vector<double> &v, const double &k);
+template void cuda_saxpy_inplace(vector<double> &y, const double &a, const vector<double> &x);
+template double cuda_dot_product(const vector<double> &v1, const vector<double> &v2);
+template double cuda_l2_norm(const vector<double> &v);
 
-template __global__ void naive_multiply_kernel(const int, const int *,
-    const int *, const float *, const float *, float *);
-template vector<float> cuda_naive_multiply(const csr_matrix<float> &m,
-    const vector<float> &v);
-template __global__ void warp_multiply_kernel(const int, const int,
-    const int, const int *, const int *, const float *, const float *,
-    float *);
-template vector<float> cuda_warp_multiply(const csr_matrix<float> &m,
-    const vector<float> &v);
-template vector<float> cuda_cusparse_multiply(const csr_matrix<float> &m,
-    const vector<float> &v);
+template vector<float> cuda_naive_multiply(const csr_matrix<float> &m, const vector<float> &v);
+template vector<float> cuda_warp_multiply(const csr_matrix<float> &m, const vector<float> &v);
+template vector<float> cuda_cusparse_multiply(const csr_matrix<float> &m, const vector<float> &v);
+
+template vector<double> cuda_naive_multiply(const csr_matrix<double> &m, const vector<double> &v);
+template vector<double> cuda_warp_multiply(const csr_matrix<double> &m, const vector<double> &v);
+template vector<double> cuda_cusparse_multiply(const csr_matrix<double> &m, const vector<double> &v);
+
+template vector<float> cuda_lanczos_eigen(const csr_matrix<float> &matrix, int k, int steps);
+template vector<double> cuda_lanczos_eigen(const csr_matrix<double> &matrix, int k, int steps);
