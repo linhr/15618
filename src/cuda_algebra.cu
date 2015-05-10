@@ -4,7 +4,9 @@
 #include <cuda_runtime.h>
 #include "cusparse.h"
 #include <cmath>
+#include <utility>
 
+#include "eigen.h"
 #include "matrix.h"
 #include "cuda_algebra.h"
 #include "cycle_timer.h"
@@ -281,6 +283,25 @@ __global__ void new_multiply_kernel(const int rows, const int *row_ptr,
     }
 }
 
+template <typename T>
+T device_dot_product(int n, const T *device_x, const T *device_y, T *device_scratch) {
+    const int blocks = (n + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+
+    // Run kernel
+    dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(
+        n, device_x, device_y, device_scratch);
+    cudaThreadSynchronize();
+
+    // Transfer result back from device to host
+    T host_scratch[blocks];
+    T result(0);
+    cudaMemcpy(host_scratch, device_scratch, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
+    for (int i = 0; i < blocks; i++) {
+        result += host_scratch[i];
+    }
+    return result;
+}
+
 /**
  * @brief   Cuda kernel function for dynamic sparse matrix multiplication.
  *
@@ -339,17 +360,7 @@ T cuda_dot_product(const vector<T> &v1, const vector<T> &v2) {
     cudaMemcpy(x, v1.data(), sizeof(T) * n, cudaMemcpyHostToDevice);
     cudaMemcpy(y, v2.data(), sizeof(T) * n, cudaMemcpyHostToDevice);
 
-    // Run kernel
-    dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(n, x, y, z);
-    cudaThreadSynchronize();
-
-    // Transfer result back from device to host
-    T z_host[blocks];
-    T result(0);
-    cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
-    for (int i = 0; i < blocks; i++) {
-        result += z_host[i];
-    }
+    T result = device_dot_product(n, x, y, z);
 
     // Release device space
     cudaFree(x);
@@ -472,17 +483,7 @@ T cuda_l2_norm(const vector<T> &v) {
     // Transfer data from host to device
     cudaMemcpy(x, v.data(), sizeof(T) * n, cudaMemcpyHostToDevice);
 
-    // Run kernel
-    dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(n, x, x, z);
-    cudaThreadSynchronize();
-
-    // Transfer result back from device to host
-    T z_host[blocks];
-    T result(0);
-    cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
-    for (int i = 0; i < blocks; i++) {
-        result += z_host[i];
-    }
+    T result = device_dot_product(n, x, x, z);
 
     // Release device space
     cudaFree(x);
@@ -803,39 +804,34 @@ vector<T> cuda_new_multiply(const csr_matrix<T> &m, const vector<T> &v) {
 /**
  * @brief   Caller function for naive Lanczos algorithm in CUDA.
  *
- * @param   m   The matrix to do operations on.
- * @param   v   The initial vector with norm 1.
- * @param   k   The iteration times for lanczos algorithm.
+ * @param   m       The matrix to do operations on.
+ * @param   v       The initial vector with norm 1.
+ * @param   steps   The iteration times for lanczos algorithm.
  *
  * @return  The tridiagonal matrix result of lanczos algorithm.
  */
 template <typename T>
-symm_tridiag_matrix<T> cuda_naive_lanczos(const csr_matrix<T> &m,
-    const vector<T> &v, const int k) {
-    // TODO: This function is untested
-    symm_tridiag_matrix<T> result(k);
+symm_tridiag_matrix<T> cuda_lanczos(const csr_matrix<T> &m,
+    const vector<T> &v, const int steps) {
+    symm_tridiag_matrix<T> result(steps + 1);
 
     int rows = m.row_size();
     int cols = m.col_size();
     int nonzeros = m.nonzeros();
-    const int blocks = (rows+THREADS_PER_BLOCK-1) / THREADS_PER_BLOCK;
+    const int blocks = (rows + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
     assert(rows == cols);
     assert(cols == v.size());
 
     // Malloc device space
     int *row_ptr, *col_ind;
-    T *values, *x, *x_prev, *x_tmp, *y, *z;
+    T *values, *x, *x_prev, *y, *scratch;
     cudaMalloc(&row_ptr, sizeof(int) * (rows + 1));
     cudaMalloc(&col_ind, sizeof(int) * nonzeros);
     cudaMalloc(&values, sizeof(T) * nonzeros);
     cudaMalloc(&x, sizeof(T) * cols);
     cudaMalloc(&x_prev, sizeof(T) * cols);
     cudaMalloc(&y, sizeof(T) * cols);
-    cudaMalloc(&z, sizeof(T) * blocks);
-
-    // Host space
-    T z_host[blocks];
-    T sum(0);
+    cudaMalloc(&scratch, sizeof(T) * blocks);
 
     // Transfer data from host to device
     cudaMemcpy(row_ptr, m.row_ptr_data(), sizeof(int) * (rows + 1),
@@ -847,55 +843,31 @@ symm_tridiag_matrix<T> cuda_naive_lanczos(const csr_matrix<T> &m,
     cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
 
     // Run kernel
-    for (int i = 0; i < k; i++) {
+    for (int i = 0; i < steps; i++) {
         // y_i = M*x_i
         naive_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
             row_ptr, col_ind, values, x, y);
         cudaThreadSynchronize();
         // alpha_i <- y_i*x_i
-        dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,x,y,z);
-        cudaThreadSynchronize();
-        cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
-        sum = 0;
-        for (int j = 0; j < blocks; j++) {
-            sum += z_host[i];
-        }
-        result.alpha(i) = sum;
+        T product = device_dot_product(rows, x, y, scratch);
+        result.alpha(i) = product;
         // y_i <- y_i - alpha_i*x_i - beta_i*x_(i-1)
-        if (i == 0) {
-            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
-                y, x, -sum);
-            cudaThreadSynchronize();
-            x_tmp = x;
-            x = x_prev;
-            x_prev = x_tmp;
-        } else {
-            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
-                y, x, -sum);
-            cudaThreadSynchronize();
-            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
-                y, x_prev, -result.beta(i-1));
-            cudaThreadSynchronize();
-            x_tmp = x;
-            x = x_prev;
-            x_prev = x_tmp;
-        }
-        // beta_(i+1) <- ||y_i||
-        dot_product_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,y,y,z);
+        saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+            y, x, -product);
         cudaThreadSynchronize();
-        cudaMemcpy(z_host, z, sizeof(T) * blocks, cudaMemcpyDeviceToHost);
-        sum = 0;
-        for (int j = 0; j < blocks; j++) {
-            sum += z_host[i];
+        if (i > 0) {
+            saxpy_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+                y, x_prev, -result.beta(i - 1));
+            cudaThreadSynchronize();
         }
-        result.beta(i) = T(sqrt(sum));
+        std::swap(x, x_prev);
+        // beta_(i+1) <- ||y_i||
+        result.beta(i) = T(sqrt(device_dot_product(rows, y, y, scratch)));
         // x_(i+1) <- y_i / beta_(i+1)
         multiply_inplace_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, y,
-            1/result.beta(i));
+            1 / result.beta(i));
         cudaThreadSynchronize();
-        x_tmp = x;
-        x = y;
-        y = x_tmp;
+        std::swap(x, y);
     }
 
     // Release device space
@@ -905,9 +877,29 @@ symm_tridiag_matrix<T> cuda_naive_lanczos(const csr_matrix<T> &m,
     cudaFree(x);
     cudaFree(x_prev);
     cudaFree(y);
-    cudaFree(z);
+    cudaFree(scratch);
 
+    result.resize(steps);
     return result;
+}
+
+/**
+ * @brief   Lanczos algorithm for eigendecomposition in CUDA.
+ * 
+ * @param   matrix  CSR matrix to decompose
+ * @param   k       number of largest eigenvalues to compute
+ * @param   steps   maximum steps for the iteration
+ * @tparam  T       matrix element data type
+ * @return  list of eigenvalues
+ */
+template <typename T>
+vector<T> cuda_lanczos_eigen(const csr_matrix<T> &matrix, int k, int steps) {
+    int cols = matrix.col_size();
+    assert(cols > 0);
+    vector<T> v(cols, 0);
+    v[0] = 1;
+    symm_tridiag_matrix<T> tridiag = cuda_lanczos(matrix, v, steps);
+    return lanczos_no_spurious(tridiag, k);
 }
 
 template __global__ void dot_product_kernel<float>(const int,
@@ -925,6 +917,11 @@ template __global__ void saxpy_inplace_kernel<float>(const int, float *,
 template void cuda_saxpy_inplace<float>(vector<float> &y, const float &a,
     const vector<float> &x);
 template float cuda_l2_norm(const vector<float> &v);
+
+template vector<float> cuda_lanczos_eigen(const csr_matrix<float> &matrix,
+    int k, int steps);
+template vector<double> cuda_lanczos_eigen(const csr_matrix<double> &matrix,
+    int k, int steps);
 
 template __global__ void naive_multiply_kernel(const int, const int *,
     const int *, const float *, const float *, float *);

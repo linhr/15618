@@ -30,4 +30,8 @@ vector<T> cuda_cusparse_multiply(const csr_matrix<T> &m,
 template <typename T>
 T cuda_l2_norm(const vector<T> &v);
 
+template <typename T>
+vector<T> cuda_lanczos_eigen(const csr_matrix<T> &matrix,
+    int k, int steps);
+
 #endif

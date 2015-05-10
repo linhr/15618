@@ -54,6 +54,7 @@ template <typename T>
 vector<T> lanczos_no_spurious(symm_tridiag_matrix<T> &tridiag, int k, const T epsilon = 1e-3) {
     assert(tridiag.size() > 0);
     vector<T> eigen = qr_eigen(tridiag);
+    sort(eigen.rbegin(), eigen.rend());
     tridiag.remove_forward(0);
     vector<T> test_eigen = qr_eigen(tridiag);
     vector<T> result;
