@@ -10,7 +10,7 @@ NVCCFLAGS = -m64 -O3 -arch compute_20 -std=c++11
 
 LDFLAGS = -L/usr/local/cuda/lib64/ -lcudart -lcusparse
 
-INCLUDES = $(addprefix $(SOURCE_DIR)/, matrix.h graph_io.h linear_algebra.h cuda_algebra.h cycle_timer.h)
+INCLUDES = $(addprefix $(SOURCE_DIR)/, matrix.h graph_io.h linear_algebra.h cuda_algebra.h cycle_timer.h eigen.h)
 OBJECTS = $(addprefix $(BUILD_DIR)/, main.o cuda_algebra.o)
 TESTS = $(addprefix test_, sparse_eigen symm_tridiag_eigen)
 
