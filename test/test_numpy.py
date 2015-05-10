@@ -3,7 +3,7 @@ import sys
 import timeit
 
 try:
-    import numpy.core._dotblas
+    import numpy.core._eigblas
     print 'FAST BLAS'
 except ImportError:
     print 'slow blas'

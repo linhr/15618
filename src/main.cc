@@ -121,15 +121,17 @@ void test(const csr_matrix<float> &matrix) {
         }
     }
     printf("Saxpy inplace checked\n");
-
-    /*float w(1);
+    
+    /*
+    float w(1);
     coo_matrix<float> graph(n);
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             graph.add_entry(i, j, w);
         }
     }
-    csr_matrix<float> matrix(graph);*/
+    csr_matrix<float> matrix(graph);
+    */
     for (int i = 0; i < n; i++) {
         z[i] = random() * 10 / RAND_MAX;
     }
@@ -159,6 +161,17 @@ void test(const csr_matrix<float> &matrix) {
         }
     }
     printf("Warp mv multiply checked\n");
+    start_time = cycle_timer::current_seconds();
+    vector<float> d = cuda_new_multiply(matrix, z);
+    end_time = cycle_timer::current_seconds();
+    printf("new gpu multiply: %f\n", end_time - start_time);
+    for (int i = 0; i < n; i++) {
+        if (a[i] != d[i]) {
+            printf("New mv multiply disagree\n");
+            return;
+        }
+    }
+    printf("New mv multiply checked\n");
 }
 
 int main(int argc, char *argv[]) {

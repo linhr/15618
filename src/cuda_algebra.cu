@@ -1,14 +1,15 @@
 #include <cassert>
 #include <cuda.h>
+#include <unistd.h>
 #include <cuda_runtime.h>
+#include "cusparse.h"
 #include <cmath>
 
 #include "matrix.h"
 #include "cuda_algebra.h"
 #include "cycle_timer.h"
 
-#define WARP_SIZE 32
-#define THREADS_PER_BLOCK 512
+#define THREADS_PER_BLOCK 256
 
 using std::vector;
 
@@ -163,7 +164,7 @@ __global__ void naive_multiply_kernel(const int rows, const int *row_ptr,
 }
 
 /**
- * @brief   Cuda kernel function for naive sparse matrix multiplication.
+ * @brief   Cuda kernel function for warp sparse matrix multiplication.
  *
  * @param   rows    The row number of the matrix.
  * @param   row_ptr Row pointers in the CSR matrix.
@@ -173,18 +174,19 @@ __global__ void naive_multiply_kernel(const int rows, const int *row_ptr,
  * @param   y       The output vector y.
  */
 template <typename T>
-__global__ void warp_multiply_kernel(const int rows, const int *row_ptr,
-    const int *col_ind, const T *values, const T *x, T *y) {
+__global__ void warp_multiply_kernel(const int WARP_SIZE, const int rows,
+    const int *row_ptr, const int *col_ind, const T *values, const T *x,
+    T *y) {
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int r = index / WARP_SIZE;
     int lane = index % WARP_SIZE;
-    __shared__ T result[THREADS_PER_BLOCK];
+    __shared__ volatile T result[THREADS_PER_BLOCK];
 
+    result[threadIdx.x] = 0;
     if (r < rows) {
         int start = row_ptr[r];
         int end = row_ptr[r + 1];
-        result[threadIdx.x] = 0;
         for (int i = start + lane; i < end; i+= WARP_SIZE) {
             result[threadIdx.x] += values[i] * x[col_ind[i]];
         }
@@ -198,6 +200,81 @@ __global__ void warp_multiply_kernel(const int rows, const int *row_ptr,
         }
         if (lane == 0) {
             y[r] = result[threadIdx.x];
+        }
+    }
+}
+
+/**
+ * @brief   Cuda kernel function for new sparse matrix multiplication.
+ *
+ * @param   rows    The row number of the matrix.
+ * @param   row_ptr Row pointers in the CSR matrix.
+ * @param   col_ind Column indexes in the CSR matrix.
+ * @param   row_ind Row indexes in the CSR matrix.
+ * @param   values  Data values in the CSR matrix.
+ * @param   x       The input vector x to multiply.
+ * @param   y       The output vector y.
+ */
+template <typename T>
+__global__ void new_multiply_kernel(const int rows, const int *row_ptr,
+    const int *col_ind, const int *row_ind, const T *values, const T *x,
+    T *y) {
+
+    const int WARP_SIZE = 32;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int lane = index % WARP_SIZE;
+    __shared__ volatile T result[THREADS_PER_BLOCK][WARP_SIZE];
+
+    int values_len = row_ptr[rows];
+    int max_warp_index = index -lane + WARP_SIZE - 1;
+    int max_row;
+    if (max_warp_index < values_len) {
+        max_row = row_ind[max_warp_index] % WARP_SIZE;
+    } else {
+        max_row = (rows - 1) % WARP_SIZE;
+    }
+    int min_warp_index = index - lane;
+    int min_row = row_ind[min_warp_index] % WARP_SIZE;
+    if (min_row < max_row) {
+        for (int i = min_row; i <= max_row; i++) {
+            result[threadIdx.x][i] = 0;
+        }
+    } else {
+        for (int i = max_row; i < WARP_SIZE; i++) {
+            result[threadIdx.x][i] = 0;
+        }
+        for (int i = 0; i <= min_row; i++) {
+            result[threadIdx.x][i] = 0;
+        }
+    }
+
+    if (index < values_len) {
+        int row_id = row_ind[index];
+        result[threadIdx.x][row_id % WARP_SIZE] +=
+            values[index] * x[col_ind[index]];
+        // Threads in a warp are synchronized, so we can do this
+        int half = WARP_SIZE / 2;
+        while (half > 0) {
+            if (lane < half) {
+                if (min_row < max_row) {
+                    for (int i = min_row; i <= max_row; i++) {
+                        result[threadIdx.x][i] += result[threadIdx.x+half][i];
+                    }
+                } else {
+                    for (int i = max_row; i < WARP_SIZE; i++) {
+                        result[threadIdx.x][i] += result[threadIdx.x+half][i];
+                    }
+                    for (int i = 0; i <= min_row; i++) {
+                        result[threadIdx.x][i] += result[threadIdx.x+half][i];
+                    }
+                }
+            }
+            half /= 2;
+        }
+
+        if (lane == 0 || row_id > row_ind[index - 1]) {
+            atomicAdd(&y[row_id],
+                result[threadIdx.x - lane][row_id % WARP_SIZE]);
         }
     }
 }
@@ -280,8 +357,7 @@ void cuda_multiply_inplace(vector<T> &v, const T &k) {
  *
  * @param   v   The vector to add to.
  * @param   k   The value to add.
- */
-template <typename T>
+ */ template <typename T>
 void cuda_add_inplace(vector<T> &v, const T &k) {
     int n = v.size();
 
@@ -445,6 +521,10 @@ vector<T> cuda_naive_multiply(const csr_matrix<T> &m, const vector<T> &v) {
  */
 template <typename T>
 vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
+    cusparseHandle_t handle=0;
+    cusparseMatDescr_t descr=0;
+    float fone = 1;
+
     int rows = m.row_size();
     int cols = m.col_size();
     int nonzeros = m.nonzeros();
@@ -467,16 +547,24 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     cudaMemcpy(values, m.values_data(), sizeof(T) * nonzeros,
         cudaMemcpyHostToDevice);
     cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
+    // TODO: for testing, delete from final code
+    cudaMemset(y, 0, sizeof(T) * cols);
 
     // Run kernel
+    const int row_nonzeros = nonzeros / rows;
+    int WARP_SIZE = row_nonzeros > 16 ? 32 : 16;
+    WARP_SIZE = row_nonzeros > 8 ? WARP_SIZE : 8;
+    WARP_SIZE = row_nonzeros > 4 ? WARP_SIZE : 4;
+    WARP_SIZE = row_nonzeros > 2 ? WARP_SIZE : 2;
     const int warps_per_block = THREADS_PER_BLOCK / WARP_SIZE;
     const int blocks = (rows + warps_per_block - 1) / warps_per_block;
     double start_time = cycle_timer::current_seconds();
-    warp_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, row_ptr,
-        col_ind, values, x, y);
+    warp_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(WARP_SIZE, rows,
+        row_ptr, col_ind, values, x, y);
     cudaThreadSynchronize();
     double end_time = cycle_timer::current_seconds();
     printf("gpu warp multiply kernel: %f\n", end_time - start_time);
+
 
     // Transfer result back from device to host
     vector<T> result(cols);
@@ -488,6 +576,153 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     cudaFree(values);
     cudaFree(x);
     cudaFree(y);
+
+    sleep(5);
+
+    /* Test cusparse */
+    cudaMalloc(&row_ptr, sizeof(int) * (rows + 1));
+    cudaMalloc(&col_ind, sizeof(int) * nonzeros);
+    cudaMalloc(&values, sizeof(T) * nonzeros);
+    cudaMalloc(&x, sizeof(T) * cols);
+    cudaMalloc(&y, sizeof(T) * cols);
+
+    cudaMemcpy(row_ptr, m.row_ptr_data(), sizeof(int) * (rows + 1),
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(col_ind, m.col_ind_data(), sizeof(int) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(values, m.values_data(), sizeof(T) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
+    cudaMemset(y, 0, sizeof(T) * cols);
+
+
+    cusparseCreate(&handle);
+    cusparseCreateMatDescr(&descr); 
+    cusparseSetMatType(descr,CUSPARSE_MATRIX_TYPE_GENERAL);
+    cusparseSetMatIndexBase(descr,CUSPARSE_INDEX_BASE_ZERO);
+    double start_time_1 = cycle_timer::current_seconds();
+    cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, rows, cols,
+        nonzeros, &fone, descr, values, row_ptr, col_ind, x, &fone, y);
+    cudaThreadSynchronize();
+    double end_time_1 = cycle_timer::current_seconds();
+    printf("gpu cusparse multiply kernel: %f\n", end_time_1 - start_time_1);
+    cusparseDestroyMatDescr(descr);
+    cusparseDestroy(handle);
+
+    // Release device space
+    cudaFree(row_ptr);
+    cudaFree(col_ind);
+    cudaFree(values);
+    cudaFree(x);
+    cudaFree(y);
+
+
+    return result;
+}
+
+/**
+ * @brief   Caller function for new sparse matrix multiplication in CUDA.
+ *
+ * @param   m   The matrix to multiply.
+ * @param   v   The vector to multiply.
+ *
+ * @return  The result of matrix vector multiplication of m*v.
+ */
+template <typename T>
+vector<T> cuda_new_multiply(const csr_matrix<T> &m, const vector<T> &v) {
+    cusparseHandle_t handle=0;
+    cusparseMatDescr_t descr=0;
+    float fone = 1;
+
+    int rows = m.row_size();
+    int cols = m.col_size();
+    int nonzeros = m.nonzeros();
+    assert(cols == v.size());
+
+    // Malloc device space
+    int *row_ptr, *col_ind, *row_ind;
+    T *values, *x, *y;
+    cudaMalloc(&row_ptr, sizeof(int) * (rows + 1));
+    cudaMalloc(&col_ind, sizeof(int) * nonzeros);
+    cudaMalloc(&row_ind, sizeof(int) * nonzeros);
+    cudaMalloc(&values, sizeof(T) * nonzeros);
+    cudaMalloc(&x, sizeof(T) * cols);
+    cudaMalloc(&y, sizeof(T) * cols);
+
+    // Transfer data from host to device
+    cudaMemcpy(row_ptr, m.row_ptr_data(), sizeof(int) * (rows + 1),
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(col_ind, m.col_ind_data(), sizeof(int) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(row_ind, m.row_ind_data(), sizeof(int) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(values, m.values_data(), sizeof(T) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
+    // TODO: for testing, delete from final code
+    cudaMemset(y, 0, sizeof(T) * cols);
+
+    // Run kernel
+    const int blocks = (nonzeros + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    double start_time = cycle_timer::current_seconds();
+    new_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
+        row_ptr, col_ind, row_ind, values, x, y);
+    cudaThreadSynchronize();
+    double end_time = cycle_timer::current_seconds();
+    printf("gpu new multiply kernel: %f\n", end_time - start_time);
+
+
+    // Transfer result back from device to host
+    vector<T> result(cols);
+    cudaMemcpy(result.data(), y, sizeof(T) * cols, cudaMemcpyDeviceToHost);
+
+    // Release device space
+    cudaFree(row_ptr);
+    cudaFree(col_ind);
+    cudaFree(row_ind);
+    cudaFree(values);
+    cudaFree(x);
+    cudaFree(y);
+
+    sleep(5);
+
+    /* Test cusparse */
+    cudaMalloc(&row_ptr, sizeof(int) * (rows + 1));
+    cudaMalloc(&col_ind, sizeof(int) * nonzeros);
+    cudaMalloc(&values, sizeof(T) * nonzeros);
+    cudaMalloc(&x, sizeof(T) * cols);
+    cudaMalloc(&y, sizeof(T) * cols);
+
+    cudaMemcpy(row_ptr, m.row_ptr_data(), sizeof(int) * (rows + 1),
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(col_ind, m.col_ind_data(), sizeof(int) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(values, m.values_data(), sizeof(T) * nonzeros,
+        cudaMemcpyHostToDevice);
+    cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
+    cudaMemset(y, 0, sizeof(T) * cols);
+
+
+    cusparseCreate(&handle);
+    cusparseCreateMatDescr(&descr); 
+    cusparseSetMatType(descr,CUSPARSE_MATRIX_TYPE_GENERAL);
+    cusparseSetMatIndexBase(descr,CUSPARSE_INDEX_BASE_ZERO);
+    double start_time_1 = cycle_timer::current_seconds();
+    cusparseScsrmv(handle, CUSPARSE_OPERATION_NON_TRANSPOSE, rows, cols,
+        nonzeros, &fone, descr, values, row_ptr, col_ind, x, &fone, y);
+    cudaThreadSynchronize();
+    double end_time_1 = cycle_timer::current_seconds();
+    printf("gpu cusparse multiply kernel: %f\n", end_time_1 - start_time_1);
+    cusparseDestroyMatDescr(descr);
+    cusparseDestroy(handle);
+
+    // Release device space
+    cudaFree(row_ptr);
+    cudaFree(col_ind);
+    cudaFree(values);
+    cudaFree(x);
+    cudaFree(y);
+
 
     return result;
 }
@@ -622,7 +857,11 @@ template __global__ void naive_multiply_kernel(const int, const int *,
     const int *, const float *, const float *, float *);
 template vector<float> cuda_naive_multiply(const csr_matrix<float> &m,
     const vector<float> &v);
-template __global__ void warp_multiply_kernel(const int, const int *,
-    const int *, const float *, const float *, float *);
+template __global__ void warp_multiply_kernel(const int, const int,
+    const int *, const int *, const float *, const float *, float *);
 template vector<float> cuda_warp_multiply(const csr_matrix<float> &m,
+    const vector<float> &v);
+template __global__ void new_multiply_kernel(const int, const int *,
+    const int *, const int *, const float *, const float *, float *);
+template vector<float> cuda_new_multiply(const csr_matrix<float> &m,
     const vector<float> &v);

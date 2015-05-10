@@ -74,16 +74,19 @@ public:
 
     const T &values(int i) const { return values_[i]; }
     const int &col_ind(int i) const { return col_ind_[i]; }
+    const int &row_ind(int i) const { return row_ind_[i]; }
     const int &row_ptr(int i) const { return row_ptr_[i]; }
 
     const T *values_data() const { return values_.data(); }
     const int *col_ind_data() const { return col_ind_.data(); }
+    const int *row_ind_data() const { return row_ind_.data(); }
     const int *row_ptr_data() const { return row_ptr_.data(); }
 
 private:
     int row_size_, col_size_;
     vector<T> values_;
     vector<int> col_ind_;
+    vector<int> row_ind_;
     vector<int> row_ptr_;
 };
 
@@ -97,10 +100,12 @@ csr_matrix<T>::csr_matrix(const coo_matrix<T> &matrix)
         row_ptr_[i] += row_ptr_[i - 1];
     }
     col_ind_.resize(matrix.nonzeros());
+    row_ind_.resize(matrix.nonzeros());
     values_.resize(matrix.nonzeros());
     for (int i = 0; i < matrix.nonzeros(); ++i) {
         int pos = --row_ptr_[matrix.row(i)];
         col_ind_[pos] = matrix.col(i);
+        row_ind_[pos] = matrix.row(i);
         values_[pos] = matrix.values(i);
     }
 }
