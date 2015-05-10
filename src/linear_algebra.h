@@ -66,4 +66,20 @@ T l2_norm(const vector<T> &v) {
     return T(sqrt(dot_product(v, v)));
 }
 
+template <typename InputIterator, typename T>
+InputIterator approximate_find(InputIterator first, InputIterator last, const T &val, const T &eps) {
+    while (first != last) {
+        if (T(std::abs(*first - val)) < eps) {
+            return first;
+        }
+        ++first;
+    }
+    return last;
+}
+
+template <typename T>
+typename vector<T>::const_iterator approximate_find(const vector<T> &input, const T &val, const T &eps) {
+    return approximate_find(input.begin(), input.end(), val, eps);
+}
+
 #endif
