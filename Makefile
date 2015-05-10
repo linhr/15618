@@ -7,6 +7,7 @@ CXXFLAGS = -m64 -O3 -Wall -std=c++11
 
 NVCC = nvcc
 NVCCFLAGS = -m64 -O3 -arch compute_20 -std=c++11
+#NVCCLINKFLAGS = -dlink -arch compute_35
 
 LDFLAGS = -L/usr/local/cuda/lib64/ -lcudart -lcusparse
 
@@ -33,6 +34,7 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.cc
 
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.cu
 	$(NVCC) $(NVCCFLAGS) -c -o $@ $<
+#	$(NVCC) $(NVCCLINKFLAGS) -o cu.o $@
 
 test_%: $(SOURCE_DIR)/test/%.cc
 	$(CXX) $(CXXFLAGS) -o $@ $^

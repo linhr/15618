@@ -162,16 +162,16 @@ void test(const csr_matrix<float> &matrix) {
     }
     printf("Warp mv multiply checked\n");
     start_time = cycle_timer::current_seconds();
-    vector<float> d = cuda_new_multiply(matrix, z);
+    vector<float> d = cuda_cusparse_multiply(matrix, z);
     end_time = cycle_timer::current_seconds();
-    printf("new gpu multiply: %f\n", end_time - start_time);
+    printf("cusparse gpu multiply: %f\n", end_time - start_time);
     for (int i = 0; i < n; i++) {
         if (a[i] != d[i]) {
-            printf("New mv multiply disagree\n");
+            printf("Cusparse mv multiply disagree\n");
             return;
         }
     }
-    printf("New mv multiply checked\n");
+    printf("Cusparse mv multiply checked\n");
 }
 
 int main(int argc, char *argv[]) {
