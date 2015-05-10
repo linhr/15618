@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "matrix.h"
+
 using std::vector;
 
 template <typename T>

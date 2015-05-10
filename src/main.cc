@@ -7,6 +7,8 @@
 #include "linear_algebra.h"
 #include "cuda_algebra.h"
 #include "cycle_timer.h"
+#include "eigen.h"
+#include "utils.h"
 
 using std::cout;
 using std::cerr;
@@ -14,12 +16,14 @@ using std::endl;
 
 static string graph_file;
 static int node_count = 0;
+static int eigen_count = 0;
 
 static void usage(const char *program) {
     cout << "usage: " << program << " [options]" << endl;
     cout << "options:" << endl;
     cout << "  -g --graph <file>" << endl;
     cout << "  -n --nodes <n>" << endl;
+    cout << "  -k --eigens <k>" << endl;
 }
 
 static void parse_option(int argc, char *argv[]) {
@@ -28,15 +32,19 @@ static void parse_option(int argc, char *argv[]) {
         { "help", 0, 0, 'h' },
         { "graph", 1, 0, 'g' },
         { "nodes", 1, 0, 'n' },
+        { "eigens", 1, 0, 'k' },
         { 0, 0, 0, 0 },
     };
-    while ((opt = getopt_long(argc, argv, "g:n:h?", long_options, NULL)) != EOF) {
+    while ((opt = getopt_long(argc, argv, "g:n:k:h?", long_options, NULL)) != EOF) {
         switch (opt) {
         case 'g':
             graph_file = optarg;
             break;
         case 'n':
             node_count = atoi(optarg);
+            break;
+        case 'k':
+            eigen_count = atoi(optarg);
             break;
         case 'h':
         case '?':
@@ -53,125 +61,10 @@ static void parse_option(int argc, char *argv[]) {
         cerr << argv[0] << ": invalid node count" << endl;
         exit(1);
     }
-}
-
-void test(const csr_matrix<float> &matrix) {
-    // Due to different order of adding floats, Cuda results may slightly differ from cpu results
-    int n = 400000;
-
-    vector<float> x(n, 0);
-    vector<float> y(n, 0);
-    vector<float> z(n, 0);
-    float k = 3.0;
-
-    srandom(1);
-    for (int i = 0; i < n; i++) {
-        //x[i] = random()/((double) RAND_MAX);
-        //y[i] = random()/((double) RAND_MAX);
-        x[i] = random() * 10 / RAND_MAX;
-        y[i] = random() * 10 / RAND_MAX;
+    if (eigen_count <= 0 || eigen_count > node_count) {
+        cerr << argv[0] << ": invalid eigenvalue count" << endl;
+        exit(1);
     }
-    float cpu_result = dot_product<float>(x, y);
-    float gpu_result = cuda_dot_product<float>(x, y);
-    printf("Dot_product - cpu: %f, gpu: %f\n", cpu_result, gpu_result);
-
-    cpu_result = l2_norm<float>(x);
-    gpu_result = cuda_l2_norm<float>(x);
-    printf("L2_norm - cpu: %f, gpu: %f\n", cpu_result, gpu_result);
-
-    for (int i = 0; i < n; i++) {
-        x[i] = random() * 10 / RAND_MAX;
-        y[i] = x[i];
-    }
-    multiply_inplace(x, k);
-    cuda_multiply_inplace(y, k);
-    for (int i = 0; i < n; i++) {
-        if (x[i] != y[i]) {
-            printf("Multiply inplace disagree\n");
-            return;
-        }
-    }
-    printf("Multiply inplace checked\n");
-
-    for (int i = 0; i < n; i++) {
-        x[i] = random() * 10 / RAND_MAX;
-        y[i] = x[i];
-    }
-    add_inplace(x, k);
-    cuda_add_inplace(y, k);
-    for (int i = 0; i < n; i++) {
-        if (x[i] != y[i]) {
-            printf("Add inplace disagree\n");
-            return;
-        }
-    }
-    printf("Add inplace checked\n");
-
-    for (int i = 0; i < n; i++) {
-        x[i] = random() * 10 / RAND_MAX;
-        y[i] = x[i];
-        z[i] = random() * 10 / RAND_MAX;
-    }
-    saxpy_inplace(x, k, z);
-    cuda_saxpy_inplace(y, k, z);
-    for (int i = 0; i < n; i++) {
-        if (x[i] != y[i]) {
-            printf("Saxpy inplace disagree\n");
-            return;
-        }
-    }
-    printf("Saxpy inplace checked\n");
-    
-    /*
-    float w(1);
-    coo_matrix<float> graph(n);
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            graph.add_entry(i, j, w);
-        }
-    }
-    csr_matrix<float> matrix(graph);
-    */
-    for (int i = 0; i < n; i++) {
-        z[i] = random() * 10 / RAND_MAX;
-    }
-    double start_time = cycle_timer::current_seconds();
-    vector<float> a = multiply(matrix, z);
-    double end_time = cycle_timer::current_seconds();
-    printf("cpu multiply: %f\n", end_time - start_time);
-    start_time = cycle_timer::current_seconds();
-    vector<float> b = cuda_naive_multiply(matrix, z);
-    end_time = cycle_timer::current_seconds();
-    printf("naive gpu multiply: %f\n", end_time - start_time);
-    for (int i = 0; i < n; i++) {
-        if (a[i] != b[i]) {
-            printf("Naive mv multiply disagree\n");
-            return;
-        }
-    }
-    printf("Naive mv multiply checked\n");
-    start_time = cycle_timer::current_seconds();
-    vector<float> c = cuda_warp_multiply(matrix, z);
-    end_time = cycle_timer::current_seconds();
-    printf("warp gpu multiply: %f\n", end_time - start_time);
-    for (int i = 0; i < n; i++) {
-        if (a[i] != c[i]) {
-            printf("Warp mv multiply disagree\n");
-            return;
-        }
-    }
-    printf("Warp mv multiply checked\n");
-    start_time = cycle_timer::current_seconds();
-    vector<float> d = cuda_new_multiply(matrix, z);
-    end_time = cycle_timer::current_seconds();
-    printf("new gpu multiply: %f\n", end_time - start_time);
-    for (int i = 0; i < n; i++) {
-        if (a[i] != d[i]) {
-            printf("New mv multiply disagree\n");
-            return;
-        }
-    }
-    printf("New mv multiply checked\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -180,7 +73,8 @@ int main(int argc, char *argv[]) {
     coo_matrix<float> graph = adjacency_matrix_from_graph<float>(node_count, graph_file);
     csr_matrix<float> matrix(graph);
 
-    test(matrix);
+    int k = eigen_count;
+    print_vector(cuda_lanczos_eigen(matrix, k, 2 * k + 1));
 
     return 0;
 }
