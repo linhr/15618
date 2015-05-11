@@ -61,10 +61,11 @@ vector<T> lanczos_eigen(const csr_matrix<T> &matrix, int k, int steps) {
 template <typename T>
 vector<T> lanczos_no_spurious(symm_tridiag_matrix<T> &tridiag, int k, const T epsilon = 1e-3) {
     assert(tridiag.size() > 0);
-    vector<T> eigen = qr_eigen(tridiag);
-    sort(eigen.rbegin(), eigen.rend());
+    double start_time = cycle_timer::current_seconds();
+
+    vector<T> eigen = tqlrat_eigen(tridiag);
     tridiag.remove_forward(0);
-    vector<T> test_eigen = qr_eigen(tridiag);
+    vector<T> test_eigen = tqlrat_eigen(tridiag);
     vector<T> result;
 
     int i = 0;
@@ -83,7 +84,90 @@ vector<T> lanczos_no_spurious(symm_tridiag_matrix<T> &tridiag, int k, const T ep
     }
     std::sort(result.rbegin(), result.rend());
     result.resize(std::min((int)result.size(), k));
+
+    double end_time = cycle_timer::current_seconds();
+    cout << "spurious removal time: " << end_time - start_time << " sec" << endl;
     return result;
+}
+
+/**
+ * @brief   Calculating eigenvalues for symmetric tridiagonal matrices.
+ * @details Reinsch, C. H. (1973). Algorithm 464: Eigenvalues of a Real, Symmetric, Tridiagonal Matrix.
+ *          Communications of the ACM, 16(11), 689.
+ * 
+ * @param   matrix  symmetric tridiagonal matrix to decompose
+ * @param   epsilon precision threshold
+ * @tparam  T       matrix element data type
+ * @return  list of eigenvalues
+ */
+template <typename T>
+vector<T> tqlrat_eigen(const symm_tridiag_matrix<T> &matrix, const T epsilon = 1e-8) {
+    double start_time = cycle_timer::current_seconds();
+
+    int n = matrix.size();
+    vector<T> d(matrix.alpha_data(), matrix.alpha_data() + n);
+    vector<T> e2(n, 0);
+    for (int i = 0; i < n - 1; ++i) {
+        e2[i] = matrix.beta(i) * matrix.beta(i);
+    }
+    T b(0), b2(0), f(0);
+    for (int k = 0; k < n; ++k) {
+        T h = epsilon * epsilon * (d[k] * d[k] + e2[k]);
+        if (b2 < h) {
+            b = sqrt(h);
+            b2 = h;
+        }
+        int m = k;
+        while (m < n && e2[m] > b2) {
+            ++m;
+        }
+        if (m == n) {
+            --m;
+        }
+        if (m > k) {
+            do {
+                T g = d[k];
+                T p2 = sqrt(e2[k]);
+                h = (d[k + 1] - g) / (2.0 * p2);
+                T r2 = sqrt(h * h + 1.0);
+                d[k] = h = p2 / (h < 0.0 ? h - r2 : h + r2);
+                h = g - h;
+                f = f + h;
+                for (int i = k + 1; i < n; ++i) {
+                    d[i] -= h;
+                }
+                h = g = std::abs(d[m] - 0.0) < epsilon ? b : d[m];
+                T s2 = 0.0;
+                for (int i = m - 1; i >= k; --i) {
+                    p2 = g * h;
+                    r2 = p2 + e2[i];
+                    e2[i + 1] = s2 * r2;
+                    s2 = e2[i] / r2;
+                    d[i + 1] = h + s2 * (h + d[i]);
+                    g = d[i] - e2[i] / g;
+                    if (std::abs(g - 0.0) < epsilon) {
+                        g = b;
+                    }
+                    h = g * p2 / r2;
+                }
+                e2[k] = s2 * g * h;
+                d[k] = h;
+            } while (e2[k] > b2);
+        }
+        h = d[k] + f;
+        int j;
+        for (j = k; j > 0; --j) {
+            if (h >= d[j - 1]) {
+                break;
+            }
+            d[j] = d[j - 1];
+        }
+        d[j] = h;
+    }
+
+    double end_time = cycle_timer::current_seconds();
+    cout << "TQLRAT time: " << end_time - start_time << " sec" << endl;
+    return d;
 }
 
 /**

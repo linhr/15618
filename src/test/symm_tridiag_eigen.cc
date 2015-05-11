@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     }
     string filename(argv[1]);
 
-    vector<float> eigen = qr_eigen(symm_tridiag_matrix_from_file<float>(filename));
+    vector<float> eigen = tqlrat_eigen(symm_tridiag_matrix_from_file<float>(filename));
     sort(eigen.rbegin(), eigen.rend());
     print_vector(eigen);
 
