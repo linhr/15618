@@ -1,4 +1,5 @@
 #include <cassert>
+#include <iostream>
 #include <cuda.h>
 #include <unistd.h>
 #include <cuda_runtime.h>
@@ -13,6 +14,8 @@
 
 #define THREADS_PER_BLOCK 256
 
+using std::cout;
+using std::endl;
 using std::vector;
 
 /**
@@ -401,12 +404,13 @@ vector<T> cuda_naive_multiply(const csr_matrix<T> &m, const vector<T> &v) {
 
     // Run kernel
     const int blocks = (rows + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+
     double start_time = cycle_timer::current_seconds();
     naive_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows, row_ptr,
         col_ind, values, x, y);
     cudaThreadSynchronize();
     double end_time = cycle_timer::current_seconds();
-    printf("gpu naive multiply kernel: %f\n", end_time - start_time);
+    cout << "GPU naive multiply kernel: " << end_time - start_time << " sec" << endl;
 
     // Transfer result back from device to host
     vector<T> result(cols);
@@ -463,12 +467,13 @@ vector<T> cuda_warp_multiply(const csr_matrix<T> &m, const vector<T> &v) {
     group_size = row_nonzeros > 2 ? group_size : 2;
     const int groups_per_block = THREADS_PER_BLOCK / group_size;
     const int blocks = (rows + groups_per_block - 1) / groups_per_block;
+
     double start_time = cycle_timer::current_seconds();
     warp_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(group_size, rows,
         0, row_ptr, col_ind, values, x, y);
     cudaThreadSynchronize();
     double end_time = cycle_timer::current_seconds();
-    printf("gpu warp multiply kernel: %f\n", end_time - start_time);
+    cout << "GPU warp multiply kernel: " << end_time - start_time << " sec" << endl;
 
 
     // Transfer result back from device to host
@@ -550,19 +555,22 @@ vector<T> cuda_cusparse_multiply(const csr_matrix<T> &m,
         cudaMemcpyHostToDevice);
     cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
 
-    double start_time= cycle_timer::current_seconds();
+    double start_time = cycle_timer::current_seconds();
     cusparseCreate(&handle);
-    double end_time= cycle_timer::current_seconds();
-    printf("gpu cusparse handle initialize time: %f\n", end_time - start_time);
+    double end_time = cycle_timer::current_seconds();
+    cout << "GPU cusparse handle initialize time: " << end_time - start_time << " sec" << endl;
+
     cusparseCreateMatDescr(&descr); 
     cusparseSetMatType(descr,CUSPARSE_MATRIX_TYPE_GENERAL);
     cusparseSetMatIndexBase(descr,CUSPARSE_INDEX_BASE_ZERO);
-    start_time= cycle_timer::current_seconds();
+
+    start_time = cycle_timer::current_seconds();
     cusparse_mv_multiply_wrapper<T>(handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
         rows, cols, nonzeros, descr, values, row_ptr, col_ind, x, y);
     cudaThreadSynchronize();
-    end_time= cycle_timer::current_seconds();
-    printf("gpu cusparse multiply kernel: %f\n", end_time - start_time);
+    end_time = cycle_timer::current_seconds();
+    cout << "GPU cusparse multiply kernel: " << end_time - start_time << " sec" << endl;
+
     cusparseDestroyMatDescr(descr);
     cusparseDestroy(handle);
 
@@ -629,6 +637,7 @@ symm_tridiag_matrix<T> cuda_lanczos(const csr_matrix<T> &m,
     const int groups_per_block = THREADS_PER_BLOCK / group_size;
     const int multiply_blocks = (rows + groups_per_block - 1) / groups_per_block;
     // Run kernel
+    double start_time = cycle_timer::current_seconds();
     for (int i = 0; i < steps; i++) {
         // y_i = M*x_i
         warp_multiply_kernel<T><<<multiply_blocks, THREADS_PER_BLOCK>>>(group_size,
@@ -655,6 +664,9 @@ symm_tridiag_matrix<T> cuda_lanczos(const csr_matrix<T> &m,
         cudaThreadSynchronize();
         std::swap(x, y);
     }
+    double end_time = cycle_timer::current_seconds();
+    cout << "GPU Lanczos iterations: " << steps << endl;
+    cout << "GPU Lanczos time: " << end_time - start_time << " sec" << endl;
 
     // Release device space
     cudaFree(row_ptr);
