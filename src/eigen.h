@@ -4,11 +4,15 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 #include <vector>
 
+#include "cycle_timer.h"
 #include "linear_algebra.h"
 #include "matrix.h"
 
+using std::cout;
+using std::endl;
 using std::vector;
 
 /**
@@ -32,6 +36,7 @@ vector<T> lanczos_eigen(const csr_matrix<T> &matrix, int k, int steps) {
     vector<T> r(n, 0);
     r[0] = 1; // initialize a "random" vector
     T beta = l2_norm(r);
+    double start_time = cycle_timer::current_seconds();
     for (int t = 0; t < steps; ++t) {
         if (t > 0) {
             tridiag.beta(t - 1) = beta;
@@ -47,6 +52,9 @@ vector<T> lanczos_eigen(const csr_matrix<T> &matrix, int k, int steps) {
         tridiag.alpha(t) = alpha;
         beta = l2_norm(r);
     }
+    double end_time = cycle_timer::current_seconds();
+    cout << "CPU Lanczos iterations: " << steps << endl;
+    cout << "CPU Lanczos time: " << end_time - start_time << " sec" << endl;
     return lanczos_no_spurious(tridiag, k);
 }
 
@@ -88,6 +96,7 @@ vector<T> lanczos_no_spurious(symm_tridiag_matrix<T> &tridiag, int k, const T ep
  */
 template <typename T>
 vector<T> qr_eigen(const symm_tridiag_matrix<T> &matrix, const T epsilon = 1e-8) {
+    double start_time = cycle_timer::current_seconds();
     symm_tridiag_matrix<T> tridiag = matrix;
     int n = tridiag.size();
 
@@ -120,6 +129,8 @@ vector<T> qr_eigen(const symm_tridiag_matrix<T> &matrix, const T epsilon = 1e-8)
             converged = true;
         }
     }
+    double end_time = cycle_timer::current_seconds();
+    cout << "QR decomposition time: " << end_time - start_time << " sec" << endl;
     return vector<T>(tridiag.alpha_data(), tridiag.alpha_data() + n);
 }
 
