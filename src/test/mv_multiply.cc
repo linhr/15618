@@ -49,15 +49,28 @@ static void test(const string &filename, int n) {
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        cout << "usage: " << argv[0] << " <file> <n>" << endl;
+        cout << "usage: " << argv[0] << " <file> <n> [<t>]" << endl;
         cout << "  <file> matrix coordinate list file" << endl;
         cout << "  <n> matrix node count" << endl;
+        cout << "  <t> data type ('float' or 'double')" << endl;
         exit(1);
     }
     string filename(argv[1]);
     int n = atoi(argv[2]);
+    string type("float");
+    if (argc > 3) {
+        type = argv[3];
+    }
 
-    test<float>(filename, n);
-
+    if (type == "float") {
+        test<float>(filename, n);
+    }
+    else if (type == "double") {
+        test<double>(filename, n);
+    }
+    else {
+        cout << "invalid data type" << endl;
+        exit(1);
+    }
     return 0;
 }
