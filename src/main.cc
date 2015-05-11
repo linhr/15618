@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <iomanip>
 #include <getopt.h>
 
 #include "graph_io.h"
@@ -17,6 +18,7 @@ using std::endl;
 static string graph_file;
 static int node_count = 0;
 static int eigen_count = 0;
+static bool double_precision = false;
 
 static void usage(const char *program) {
     cout << "usage: " << program << " [options]" << endl;
@@ -24,6 +26,7 @@ static void usage(const char *program) {
     cout << "  -g --graph <file>" << endl;
     cout << "  -n --nodes <n>" << endl;
     cout << "  -k --eigens <k>" << endl;
+    cout << "  -d --double" << endl;
 }
 
 static void parse_option(int argc, char *argv[]) {
@@ -33,9 +36,10 @@ static void parse_option(int argc, char *argv[]) {
         { "graph", 1, 0, 'g' },
         { "nodes", 1, 0, 'n' },
         { "eigens", 1, 0, 'k' },
+        { "double", 0, 0, 'd' },
         { 0, 0, 0, 0 },
     };
-    while ((opt = getopt_long(argc, argv, "g:n:k:h?", long_options, NULL)) != EOF) {
+    while ((opt = getopt_long(argc, argv, "g:n:k:dh?", long_options, NULL)) != EOF) {
         switch (opt) {
         case 'g':
             graph_file = optarg;
@@ -45,6 +49,9 @@ static void parse_option(int argc, char *argv[]) {
             break;
         case 'k':
             eigen_count = atoi(optarg);
+            break;
+        case 'd':
+            double_precision = true;
             break;
         case 'h':
         case '?':
@@ -67,14 +74,40 @@ static void parse_option(int argc, char *argv[]) {
     }
 }
 
+template <typename T>
+static void run() {
+    double start_time = cycle_timer::current_seconds();
+    coo_matrix<T> graph = adjacency_matrix_from_graph<T>(node_count, graph_file);
+    csr_matrix<T> matrix(graph);
+    double end_time = cycle_timer::current_seconds();
+    cout << "graph load time: " << end_time - start_time << " sec" << endl;
+
+    int a = 2;
+    int b = 16;
+    int skip = 8;
+    int k = eigen_count;
+
+    cout << "*** running CUDA Lanczos ***" << endl;
+    for (int steps = a * k + 1; steps < b * k; steps += skip) {
+        print_vector(cuda_lanczos_eigen(matrix, k, steps));
+        cout << endl;
+    }
+    cout << "*** running CPU Lanczos ***" << endl;
+    for (int steps = a * k + 1; steps < b * k; steps += skip) {
+        print_vector(lanczos_eigen(matrix, k, steps));
+        cout << endl;
+    }
+}
+
 int main(int argc, char *argv[]) {
     parse_option(argc, argv);
 
-    coo_matrix<float> graph = adjacency_matrix_from_graph<float>(node_count, graph_file);
-    csr_matrix<float> matrix(graph);
-
-    int k = eigen_count;
-    print_vector(cuda_lanczos_eigen(matrix, k, 2 * k + 1));
-
+    cout << std::setprecision(10);
+    if (double_precision) {
+        run<double>();
+    }
+    else {
+        run<float>();
+    }
     return 0;
 }
