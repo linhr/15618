@@ -621,11 +621,18 @@ symm_tridiag_matrix<T> cuda_lanczos(const csr_matrix<T> &m,
         cudaMemcpyHostToDevice);
     cudaMemcpy(x, v.data(), sizeof(T) * cols, cudaMemcpyHostToDevice);
 
+    const int row_nonzeros = nonzeros / rows;
+    int group_size = row_nonzeros > 16 ? 32 : 16;
+    group_size = row_nonzeros > 8 ? group_size : 8;
+    group_size = row_nonzeros > 4 ? group_size : 4;
+    group_size = row_nonzeros > 2 ? group_size : 2;
+    const int groups_per_block = THREADS_PER_BLOCK / group_size;
+    const int multiply_blocks = (rows + groups_per_block - 1) / groups_per_block;
     // Run kernel
     for (int i = 0; i < steps; i++) {
         // y_i = M*x_i
-        naive_multiply_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(rows,
-            row_ptr, col_ind, values, x, y);
+        warp_multiply_kernel<T><<<multiply_blocks, THREADS_PER_BLOCK>>>(group_size,
+            rows, 0, row_ptr, col_ind, values, x, y);
         cudaThreadSynchronize();
         // alpha_i <- y_i*x_i
         T product = device_dot_product(rows, x, y, scratch);
