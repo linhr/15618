@@ -83,17 +83,17 @@ static void run() {
     cout << "graph load time: " << end_time - start_time << " sec" << endl;
 
     int a = 2;
-    int b = 16;
-    int skip = 8;
+    int b1 = 64, b2 = 8;
+    int skip = 16;
     int k = eigen_count;
 
     cout << "*** running CUDA Lanczos ***" << endl;
-    for (int steps = a * k + 1; steps < b * k; steps += skip) {
+    for (int steps = a * k + 1; steps < b1 * k; steps += skip) {
         print_vector(cuda_lanczos_eigen(matrix, k, steps));
         cout << endl;
     }
     cout << "*** running CPU Lanczos ***" << endl;
-    for (int steps = a * k + 1; steps < b * k; steps += skip) {
+    for (int steps = a * k + 1; steps < b2 * k; steps += skip) {
         print_vector(lanczos_eigen(matrix, k, steps));
         cout << endl;
     }
@@ -102,7 +102,7 @@ static void run() {
 int main(int argc, char *argv[]) {
     parse_option(argc, argv);
 
-    cout << std::setprecision(10);
+    cout << std::setprecision(15);
     if (double_precision) {
         run<double>();
     }
