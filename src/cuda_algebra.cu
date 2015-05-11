@@ -11,7 +11,7 @@
 #include "cuda_algebra.h"
 #include "cycle_timer.h"
 
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 512
 
 using std::vector;
 
