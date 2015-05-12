@@ -6,7 +6,7 @@ layout: index
 
 ## SUMMARY
 
-We implemented a parallel program to calculate matrix eigenvalues in CUDA on GPU using the Lanczos algorithm. We also implemented efficient matrix-vector multiplication in CUDA which serves as a basis for our eigenvalue computation.
+We implemented a parallel program to calculate matrix eigenvalues in CUDA on GPU using the Lanczos algorithm. As the key step in our eigenvalue computation, efficient sparse matrix-vector multiplication in CUDA is also implemented, which is faster than the routine in CUDA Toolkit on large matrices.
 
 ## BACKGROUND
 
