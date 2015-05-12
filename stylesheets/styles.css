@@ -809,6 +809,13 @@ section #title p {
 section .content h1 {
   margin-bottom: 40px;
 }
+section .content img {
+  padding: 20px;
+  background-color: #f0e7d5;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
 #footer .credits {
   font-size: 11px;
   font-family: 'OpenSansRegular', "Helvetica Neue", Helvetica, Arial, sans-serif;
